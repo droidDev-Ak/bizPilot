@@ -66,11 +66,11 @@ def _detect_llm(pref: str = None):
     if (pref == "groq" or not gemini_key) and groq_key:
         return groq_key, "", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", None, "Groq (Llama 3)"
     elif (pref == "gemini" or not groq_key) and gemini_key:
-        return "", gemini_key, None, "gemini-1.5-flash", "google", "Google Gemini"
+        return "", gemini_key, None, "gemini-1.5-flash-latest", "google", "Google Gemini"
     
     # Fallbacks 
     if gemini_key:
-        return "", gemini_key, None, "gemini-1.5-flash", "google", "Google Gemini"
+        return "", gemini_key, None, "gemini-1.5-flash-latest", "google", "Google Gemini"
     elif groq_key:
         return groq_key, "", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", None, "Groq (Llama 3)"
     elif openai_key.startswith("nvapi-"):
