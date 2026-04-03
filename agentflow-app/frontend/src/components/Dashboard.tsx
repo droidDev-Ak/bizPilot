@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import {
   LayoutDashboard, Bot, Sparkles, Activity, FileText,
   Settings, LogOut, Search, Bell, SearchCode,
-  ChevronRight, MoreHorizontal,
-  Plus
+  ChevronRight, MoreHorizontal, Plus, Target
 } from 'lucide-react';
+import { LeadAgentView } from './LeadAgentView';
 
 interface Agent {
   agent_id: string;
@@ -24,6 +24,7 @@ interface DashboardProps {
 export default function Dashboard({ onBack, onNew, onOpenAgent }: DashboardProps) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'overview' | 'leads'>('overview');
 
   // Quick Create Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -108,8 +109,11 @@ export default function Dashboard({ onBack, onNew, onOpenAgent }: DashboardProps
           <div>
             <div className="text-[10px] font-mono tracking-widest text-[#666666] uppercase px-4 mb-4">General</div>
             <nav className="space-y-1">
-              <button className="w-full flex items-center gap-3 px-4 py-3 bg-[#111111] text-white font-medium border border-[#333333]">
-                <LayoutDashboard size={18} className="text-white" />
+              <button
+                onClick={() => setActiveTab('overview')}
+                className={`w-full flex items-center gap-3 px-4 py-3 transition-none ${ activeTab === 'overview' ? 'bg-[#111111] text-white font-medium border border-[#333333]' : 'text-[#aaaaaa] hover:bg-[#111111] hover:text-white' }`}
+              >
+                <LayoutDashboard size={18} className={activeTab === 'overview' ? 'text-white' : ''} />
                 <span className="text-[13px] uppercase tracking-wider">Dashboard</span>
               </button>
               <button onClick={() => setIsCreateModalOpen(true)} className="w-full flex items-center justify-between px-4 py-3 text-[#aaaaaa] hover:bg-[#111111] hover:text-white transition-none group">
@@ -118,6 +122,13 @@ export default function Dashboard({ onBack, onNew, onOpenAgent }: DashboardProps
                   <span className="text-[13px] uppercase tracking-wider">Agents</span>
                 </div>
                 <div className="px-2 py-0.5 bg-[#1a1a1a] text-[10px] border border-[#333333] font-mono">{agents.length}</div>
+              </button>
+              <button
+                onClick={() => { setActiveTab('leads'); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 transition-none ${ activeTab === 'leads' ? 'bg-[#111111] text-white border border-[#333333]' : 'text-[#aaaaaa] hover:bg-[#111111] hover:text-white' }`}
+              >
+                <Target size={18} />
+                <span className="text-[13px] uppercase tracking-wider">Lead Finder</span>
               </button>
               <button className="w-full flex items-center gap-3 px-4 py-3 text-[#aaaaaa] hover:bg-[#111111] hover:text-white transition-none">
                 <Sparkles size={18} />
@@ -165,7 +176,7 @@ export default function Dashboard({ onBack, onNew, onOpenAgent }: DashboardProps
           <div className="flex items-center gap-3 text-[13px] text-[#666666] uppercase tracking-wider font-mono">
             <LayoutDashboard size={14} />
             <ChevronRight size={14} />
-            <span className="text-white">Dashboard</span>
+            <span className="text-white">{activeTab === 'leads' ? 'Lead Finder' : 'Dashboard'}</span>
           </div>
 
           <div className="flex items-center gap-5">
@@ -190,6 +201,28 @@ export default function Dashboard({ onBack, onNew, onOpenAgent }: DashboardProps
         {/* Scrollable Dashboard Area */}
         <div className="flex-1 overflow-y-auto p-6 md:p-8 scroll-pane">
           <div className="max-w-[1400px] mx-auto space-y-8">
+
+            {/* Tab bar */}
+            <div className="flex items-center gap-1 border-b border-[#1a1a1a] pb-0">
+              <button
+                onClick={() => setActiveTab('overview')}
+                className={`px-6 py-3 font-mono text-[12px] uppercase tracking-widest transition-none ${ activeTab === 'overview' ? 'bg-white text-black' : 'text-[#666] hover:text-white' }`}
+              >
+                Overview
+              </button>
+              <button
+                onClick={() => setActiveTab('leads')}
+                className={`px-6 py-3 font-mono text-[12px] uppercase tracking-widest transition-none flex items-center gap-2 ${ activeTab === 'leads' ? 'bg-white text-black' : 'text-[#666] hover:text-white' }`}
+              >
+                <Target size={12} /> Lead Finder
+              </button>
+            </div>
+
+            {/* Lead Finder Tab */}
+            {activeTab === 'leads' && <LeadAgentView />}
+
+            {/* Overview Tab content */}
+            {activeTab === 'overview' && <>
 
             {/* Promo Banner - Flat Strict UI */}
             <div className="bg-[#0f0f0f] border border-[#333333] p-8 flex flex-col md:flex-row items-center justify-between gap-6">
@@ -306,6 +339,7 @@ export default function Dashboard({ onBack, onNew, onOpenAgent }: DashboardProps
               </div>
             </div>
 
+            </> }
           </div>
         </div>
       </main>
