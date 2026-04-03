@@ -17,11 +17,10 @@ interface Agent {
 
 interface DashboardProps {
   onBack: () => void;
-  onNew: () => void;
   onOpenAgent: (id: string, name: string, prompt: string, provider: string, model: string) => void;
 }
 
-export default function Dashboard({ onBack, onNew, onOpenAgent }: DashboardProps) {
+export default function Dashboard({ onBack, onOpenAgent }: DashboardProps) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'leads'>('overview');

@@ -87,7 +87,6 @@ export default function App() {
       {step === 6 && (
         <Dashboard
           onBack={() => setStep(0)}
-          onNew={() => setStep(3)}
           onOpenAgent={(id, name, _prompt, provider, model) => {
             setAgentId(id);
             setAgentName(name);
