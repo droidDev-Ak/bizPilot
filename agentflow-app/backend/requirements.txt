@@ -8,3 +8,5 @@ crewai>=0.28.8
 google-generativeai
 litellm
 requests
+beautifulsoup4
+lxml
