@@ -2,6 +2,7 @@ fastapi
 uvicorn
 gunicorn
 python-dotenv
+flaml
 pyautogen
 pydantic
 crewai>=0.28.8
