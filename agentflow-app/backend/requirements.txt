@@ -3,7 +3,7 @@ uvicorn
 gunicorn
 python-dotenv
 flaml
-pyautogen
+pyautogen<0.3
 pydantic
 crewai>=0.28.8
 google-generativeai
@@ -11,3 +11,4 @@ litellm
 requests
 beautifulsoup4
 lxml
+python-telegram-bot>=20.0

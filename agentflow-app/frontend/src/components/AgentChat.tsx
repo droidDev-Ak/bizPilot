@@ -1,163 +1,192 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Send, ArrowLeft, Bot, User, Download, Plus, RotateCcw, TimerReset, Mic, MicOff, Languages, Cpu, ShieldAlert } from 'lucide-react';
-import type { ProviderInfo } from '../types';
+import { useState, useRef, useEffect } from 'react';
+import { Send, ArrowLeft, Bot, User, Trash2, Cpu, ShieldAlert, Mic, Volume2, VolumeX, LayoutDashboard } from 'lucide-react';
 
-interface Props {
+interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+interface ProviderInfo {
+  provider: string;
+  model: string;
+}
+
+interface AgentChatProps {
   agentId: string;
   agentName: string;
   providerInfo: ProviderInfo;
   onBack: () => void;
   onNewAgent: () => void;
+  onViewDashboard?: () => void;
 }
 
-interface ChatMessage {
-  role: 'assistant' | 'user';
-  text: string;
-}
-
-export default function AgentChat({ agentId, agentName, providerInfo, onBack, onNewAgent }: Props) {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      role: 'assistant',
-      text: `Hi! I'm ${agentName}, your AutoGen agent running on ${providerInfo.model} via ${providerInfo.provider}. Send me a message to test the live workflow.`,
-    },
-  ]);
+export default function AgentChat({
+  agentId,
+  agentName,
+  providerInfo,
+  onBack,
+  onNewAgent,
+  onViewDashboard,
+}: AgentChatProps) {
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
-  const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
-  const [cooldownSeconds, setCooldownSeconds] = useState(0);
-  const [pendingRetryMessage, setPendingRetryMessage] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  
+  // Voice feature states
   const [isListening, setIsListening] = useState(false);
-  const [voiceLang, setVoiceLang] = useState<'en-US' | 'hi-IN'>('en-US');
-  const recognitionRef = useRef<any>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [isVoiceResponseEnabled, setIsVoiceResponseEnabled] = useState(true);
 
-  useEffect(() => {
-    return () => {
-      recognitionRef.current?.stop();
-    };
-  }, []);
+  // Telegram Bot state
+  const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
+  const [botStatus, setBotStatus] = useState<'offline' | 'starting' | 'live'>('offline');
+  const [token, setToken] = useState('');
+  const [botUsername, setBotUsername] = useState('');
+  
+  const toggleTelegram = async () => {
+    if (botStatus === 'live') {
+      setBotStatus('starting');
+      try {
+        await fetch('/api/telegram/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'stop' })
+        });
+        setBotStatus('offline');
+        setBotUsername('');
+      } catch (e) {
+        console.error(e);
+        setBotStatus('live');
+      }
+    } else {
+      setBotStatus('starting');
+      try {
+        // Fetch bot username directly from Telegram API for redirect
+        let resolvedUsername = '';
+        try {
+          const res = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+          const data = await res.json();
+          if (data.ok && data.result?.username) {
+            resolvedUsername = data.result.username;
+            setBotUsername(resolvedUsername);
+          }
+        } catch (err) {
+          console.warn('Failed to fetch bot username from Telegram', err);
+        }
 
-  const toggleListening = () => {
-    if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
-      return;
+        const response = await fetch('/api/telegram/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'start', token, agent_id: agentId })
+        });
+        
+        if (!response.ok) throw new Error('Failed to start bot backend');
+        setBotStatus('live');
+      } catch (e) {
+        console.error(e);
+        setBotStatus('offline');
+      }
     }
-    const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRec) {
-      alert('Speech Recognition is not supported in your browser.');
-      return;
-    }
-    const recognition = new SpeechRec();
-    recognition.lang = voiceLang;
-    recognition.continuous = false;
-    recognition.interimResults = true;
-
-    recognition.onstart = () => setIsListening(true);
-    recognition.onresult = (e: any) => {
-      const transcript = Array.from(e.results)
-        .map((r: any) => r[0].transcript)
-        .join('');
-      setInput(transcript);
-    };
-    recognition.onerror = () => setIsListening(false);
-    recognition.onend = () => setIsListening(false);
-
-    recognition.start();
-    recognitionRef.current = recognition;
   };
+  
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, isTyping]);
+  }, [messages]);
 
-  useEffect(() => {
-    if (!cooldownUntil) {
-      setCooldownSeconds(0);
-      return;
+  const speak = (text: string) => {
+    if (!isVoiceResponseEnabled || !('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.05;
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const toggleListening = () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      if (isListening) return;
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      
+      recognition.onstart = () => setIsListening(true);
+      
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setInput((prev) => prev + (prev ? ' ' : '') + transcript);
+        setIsListening(false);
+      };
+      
+      recognition.onerror = () => setIsListening(false);
+      recognition.onend = () => setIsListening(false);
+      
+      recognition.start();
+    } else {
+      alert("Browser doesn't support Web Speech API.");
     }
-    const updateCountdown = () => {
-      const remaining = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
-      setCooldownSeconds(remaining);
-      if (remaining === 0) {
-        setCooldownUntil(null);
-      }
-    };
-    updateCountdown();
-    const intervalId = window.setInterval(updateCountdown, 1000);
-    return () => window.clearInterval(intervalId);
-  }, [cooldownUntil]);
+  };
 
-  const sendMessage = async (message: string, appendUserMessage = true) => {
-    if (!message.trim()) return;
+  const handleSend = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!input.trim() || isLoading) return;
 
-    if (appendUserMessage) {
-      setMessages((prev) => [...prev, { role: 'user', text: message }]);
-    }
-    setIsTyping(true);
+    const userMsg: Message = { role: 'user', content: input };
+    setMessages(prev => [...prev, userMsg]);
+    setInput('');
+    setIsLoading(true);
 
     try {
       const response = await fetch(`/api/agents/${agentId}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({
+          agent_id: agentId,
+          message: input,
+          provider: providerInfo.provider,
+          model: providerInfo.model,
+        }),
       });
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.detail || data.message || 'The chat request failed.');
-      }
-
-      if (data.status === 'rate_limited') {
-        const waitSeconds = Number(data.wait_seconds) || 60;
-        setPendingRetryMessage(message);
-        setCooldownUntil(Date.now() + waitSeconds * 1000);
-        const replyText = data.reply || `Rate limit reached. Please wait ${waitSeconds} seconds.`;
-        setMessages((prev) => [...prev, { role: 'assistant', text: replyText }]);
-        return;
-      }
-
-      setPendingRetryMessage(null);
-      setCooldownUntil(null);
-      const replyText = data.reply || 'No reply returned by the agent.';
-      setMessages((prev) => [...prev, { role: 'assistant', text: replyText }]);
+      const replyText = data.reply || 'No response from agent.';
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: replyText
+      }]);
+      speak(replyText);
     } catch (error) {
-      const errorText = error instanceof Error ? error.message : 'Backend unreachable.';
-      setMessages((prev) => [...prev, { role: 'assistant', text: `Backend error: ${errorText}` }]);
+      console.error(error);
+      const errText = 'System Error: Latent space connection severed.';
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: errText
+      }]);
+      speak(errText);
     } finally {
-      setIsTyping(false);
+      setIsLoading(false);
     }
-  };
-
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isTyping || cooldownSeconds > 0) return;
-    const message = input.trim();
-    setInput('');
-    await sendMessage(message, true);
-  };
-
-  const handleRetry = async () => {
-    if (!pendingRetryMessage || isTyping || cooldownSeconds > 0) return;
-    await sendMessage(pendingRetryMessage, true);
   };
 
   return (
     <div className="h-screen bg-[#050505] flex flex-col font-sans relative overflow-hidden">
       {/* Background Atmosphere */}
-      <div
-        className="absolute inset-0 bg-cover bg-center opacity-10 z-0 pointer-events-none"
-        style={{ backgroundImage: "url('https://framerusercontent.com/images/EqTvMX987cRyoYGTSVcaTDhwgWM.jpg')" }}
+      <div 
+        className="absolute inset-0 bg-cover bg-center opacity-40 z-0 pointer-events-none grayscale-[0.3]" 
+        style={{ backgroundImage: "url('https://images.unsplash.com/photo-1473448912268-2022ce9509d8?q=80&w=2541&auto=format&fit=crop')" }}
       />
-
+      <div className="absolute inset-0 bg-gradient-to-b from-[#050505]/80 via-[#050505]/40 to-[#050505]/95 z-0 pointer-events-none" />
+      
       {/* Premium Header */}
-      <header className="px-6 py-6 md:px-12 border-b border-white/[0.04] flex justify-between items-center bg-[#050505]/90 backdrop-blur-2xl sticky top-0 z-50">
+      <header className="px-6 py-6 md:px-12 border-b border-white/[0.04] flex justify-between items-center bg-[#050505]/95 backdrop-blur-2xl sticky top-0 z-50">
         <div className="flex items-center gap-6">
-          <button
-            onClick={onBack}
+          <button 
+            onClick={() => {
+              window.speechSynthesis.cancel();
+              onBack();
+            }} 
             className="w-10 h-10 rounded-full border border-white/5 bg-white/5 flex items-center justify-center text-white/40 hover:text-white transition-luxury"
           >
             <ArrowLeft size={20} />
@@ -168,144 +197,259 @@ export default function AgentChat({ agentId, agentName, providerInfo, onBack, on
           </div>
         </div>
         <div className="flex items-center gap-4">
-          {/* Hindi / English Toggle */}
+          {/* Deploy to Telegram Button */}
           <button
-            onClick={() => setVoiceLang(voiceLang === 'en-US' ? 'hi-IN' : 'en-US')}
-            className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 bg-white/[0.03] text-white/60 hover:text-white transition-luxury"
-            title="Toggle Hindi / English"
+            onClick={() => {
+              window.speechSynthesis.cancel();
+              setIsDeployModalOpen(true);
+            }}
+            className="hidden md:flex items-center gap-2 px-6 py-2.5 rounded-full bg-cyan-500 text-black font-bold text-[11px] uppercase tracking-widest hover:bg-cyan-400 hover:shadow-[0_0_20px_rgba(34,211,238,0.4)] transition-luxury"
           >
-            <Languages size={14} />
-            <span className="text-[11px] font-bold tracking-widest uppercase">{voiceLang === 'hi-IN' ? '\u0939\u093f\u0902' : 'EN'}</span>
+            Deploy Agent
           </button>
+
+          {/* Dashboard Button */}
+          {onViewDashboard && (
+            <button
+              onClick={() => { window.speechSynthesis.cancel(); onViewDashboard(); }}
+              className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 bg-white/[0.03] text-white/60 hover:text-white transition-luxury"
+            >
+              <LayoutDashboard size={14} />
+              <span className="text-[11px] font-bold tracking-widest uppercase">Dashboard</span>
+            </button>
+          )}
+
+          {/* Voice Response Toggle */}
+          <button
+            onClick={() => setIsVoiceResponseEnabled(!isVoiceResponseEnabled)}
+            className={`w-10 h-10 rounded-full border flex items-center justify-center transition-luxury ${isVoiceResponseEnabled ? 'border-cyan-500/30 bg-cyan-500/10 text-cyan-400' : 'border-white/5 bg-white/5 text-white/40'}`}
+            title={isVoiceResponseEnabled ? 'Voice Responses Enabled' : 'Voice Responses Muted'}
+          >
+            {isVoiceResponseEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+          </button>
+
           <div className="hidden md:flex items-center gap-3 px-4 py-2 rounded-full border border-white/[0.05] bg-white/[0.03] shadow-inner">
-            <Cpu size={14} className="text-white/30" />
-            <span className="text-[11px] font-mono tracking-widest text-white/50 uppercase font-bold">gemini-1.5-flash</span>
+            <Cpu size={14} className="text-white/40" />
+            <span className="text-[11px] font-mono tracking-widest text-white/50 uppercase font-bold">{providerInfo.model}</span>
           </div>
-          <button
-            onClick={() => window.open(`/api/agents/${agentId}/download`, '_blank')}
-            className="w-10 h-10 rounded-full border border-white/5 bg-white/5 flex items-center justify-center text-white/40 hover:text-white transition-luxury"
-            title="Download Agent Script"
+
+          <button 
+            onClick={() => {
+              window.speechSynthesis.cancel();
+              onNewAgent();
+            }} 
+            className="text-white/40 hover:text-white transition-luxury flex items-center gap-2 group ml-2"
           >
-            <Download size={16} />
-          </button>
-          <button
-            onClick={onNewAgent}
-            className="text-white/30 hover:text-white transition-luxury flex items-center gap-2 group"
-          >
-            <Plus size={16} className="group-hover:scale-110 transition-transform" />
-            <span className="text-[11px] font-bold uppercase tracking-widest hidden sm:inline">New</span>
+            <Trash2 size={16} className="group-hover:scale-110 transition-transform" />
+            <span className="text-[11px] font-bold uppercase tracking-widest hidden md:block">Reset</span>
           </button>
         </div>
       </header>
 
-      {/* Cooldown Banner */}
-      {(cooldownSeconds > 0 || pendingRetryMessage) && (
-        <div className="px-6 md:px-12 py-4 border-b border-white/[0.04] bg-white/[0.02] flex items-center justify-between gap-6 z-40">
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
-              <TimerReset size={18} className="text-white/40" />
-            </div>
-            <div>
-              <p className="text-[13px] font-bold text-white">Gemini Cooldown</p>
-              <p className="text-[12px] text-white/40">
-                {cooldownSeconds > 0
-                  ? `Free-tier capacity is cooling down. Retry available in ${cooldownSeconds}s.`
-                  : 'Your last prompt is ready to retry.'}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={handleRetry}
-            disabled={!pendingRetryMessage || cooldownSeconds > 0 || isTyping}
-            className="px-6 py-3 rounded-2xl border border-white/10 bg-white/5 text-white/60 hover:text-white disabled:opacity-20 transition-luxury flex items-center gap-2 text-sm font-bold"
-          >
-            <RotateCcw size={14} />
-            {cooldownSeconds > 0 ? `Retry in ${cooldownSeconds}s` : 'Retry'}
-          </button>
-        </div>
-      )}
-
       {/* Main Chat Interface */}
-      <main className="flex-1 overflow-y-auto pt-16 pb-12 relative z-10" ref={scrollRef}>
-        <div className="max-w-4xl mx-auto w-full px-6 space-y-16">
+      <main className="flex-1 overflow-y-auto pt-12 pb-48 scroll-pane relative z-10" ref={scrollRef}>
+        <div className="max-w-4xl mx-auto w-full px-4 md:px-6 space-y-10">
+          {messages.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-32 text-center group">
+               <div className="w-24 h-24 rounded-full border border-white/5 bg-white/[0.03] flex items-center justify-center mb-8 animate-float group-hover:scale-110 transition-all shadow-2xl backdrop-blur-md">
+                  <Bot size={48} className="text-white/20" />
+               </div>
+               <h3 className="text-3xl font-serif text-white/40 mb-3 drop-shadow-lg">Briefing Session</h3>
+               <p className="text-[14px] font-mono tracking-widest text-white/20 uppercase">Awaiting commander protocols & voice input</p>
+            </div>
+          )}
+          
           {messages.map((msg, index) => (
-            <div key={index} className="flex gap-8 animate-fade-in group">
-              <div className={`w-12 h-12 rounded-[1rem] flex items-center justify-center shrink-0 border transition-luxury ${msg.role === 'assistant' ? 'border-white/10 bg-white/5 text-white/50' : 'border-white/5 bg-transparent text-white/20'}`}>
-                {msg.role === 'assistant' ? <Bot size={24} /> : <User size={24} />}
-              </div>
-              <div className="flex-1 space-y-3 pt-2">
-                <div className="flex items-center justify-between">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/20">
-                    {msg.role === 'assistant' ? agentName : 'You'}
+            <div key={index} className={`flex w-full animate-fade-in group ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`flex gap-4 max-w-[85%] md:max-w-[75%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                
+                {/* Avatar */}
+                <div className={`w-10 h-10 md:w-12 md:h-12 rounded-[1rem] flex items-center justify-center shrink-0 border shadow-2xl backdrop-blur-md transition-luxury ${msg.role === 'assistant' ? 'border-white/10 bg-white/5 text-white/60' : 'border-white/5 bg-transparent text-white/30'}`}>
+                  {msg.role === 'assistant' ? <Bot size={20} /> : <User size={20} />}
+                </div>
+
+                {/* Message Bubble */}
+                <div className={`flex flex-col space-y-2 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                  <div className={`text-[10px] font-bold uppercase tracking-[0.2em] px-2 ${msg.role === 'user' ? 'text-white/30' : 'text-white/40'}`}>
+                    {msg.role === 'assistant' ? agentName : 'Commander'}
+                  </div>
+                  
+                  <div className={`relative px-6 py-4 md:px-8 md:py-5 rounded-[1.5rem] text-[15px] md:text-[17px] leading-relaxed font-light whitespace-pre-wrap selection:bg-white selection:text-black shadow-2xl backdrop-blur-md transition-all ${
+                    msg.role === 'assistant' 
+                      ? 'bg-[#111111]/80 border border-white/[0.08] text-white/90 rounded-tl-sm' 
+                      : 'bg-white/10 border border-white/10 text-white rounded-tr-sm'
+                  }`}>
+                    {msg.content}
                   </div>
                 </div>
-                <div className={`text-[17px] leading-relaxed font-light ${msg.role === 'assistant' ? 'text-white/90' : 'text-white/60'} whitespace-pre-wrap selection:bg-white selection:text-black`}>
-                  {msg.text}
-                </div>
+
               </div>
             </div>
           ))}
 
-          {isTyping && (
-            <div className="flex gap-8 animate-pulse">
-              <div className="w-12 h-12 rounded-[1rem] flex items-center justify-center shrink-0 border border-white/10 bg-white/5 text-white/40">
-                <Bot size={24} />
-              </div>
-              <div className="flex-1 space-y-4 pt-3">
-                <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/20 font-mono animate-blink">Synthesizing...</div>
-                <div className="flex gap-2">
-                  <div className="w-2 h-2 bg-white/30 rounded-full animate-bounce [animation-delay:-0.3s]" />
-                  <div className="w-2 h-2 bg-white/30 rounded-full animate-bounce [animation-delay:-0.15s]" />
-                  <div className="w-2 h-2 bg-white/30 rounded-full animate-bounce" />
+          {isLoading && (
+            <div className="flex w-full justify-start animate-fade-in">
+              <div className="flex gap-4 max-w-[85%] md:max-w-[75%]">
+                <div className="w-10 h-10 md:w-12 md:h-12 rounded-[1rem] flex items-center justify-center shrink-0 border border-white/10 bg-white/5 text-white/40 shadow-2xl backdrop-blur-md">
+                  <Bot size={20} />
+                </div>
+                <div className="flex flex-col space-y-2 items-start">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.2em] px-2 text-cyan-400/50 animate-pulse">
+                    Synthesizing
+                  </div>
+                  <div className="px-6 py-5 rounded-[1.5rem] rounded-tl-sm bg-[#111111]/80 border border-white/[0.08] backdrop-blur-md shadow-2xl">
+                    <div className="flex gap-2 items-center h-full">
+                      <div className="w-2 h-2 bg-white/30 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                      <div className="w-2 h-2 bg-white/30 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                      <div className="w-2 h-2 bg-white/30 rounded-full animate-bounce" />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
           )}
-          {/* Spacer to prevent input overlay */}
-          <div className="h-40" />
         </div>
       </main>
 
       {/* Input Terminal Shell */}
-      <div className="absolute bottom-0 w-full px-6 py-12 md:pb-16 bg-gradient-to-t from-[#050505] via-[#050505]/95 to-transparent z-50">
-        <div className="max-w-4xl mx-auto w-full relative">
-          <form onSubmit={handleSend} className="relative group flex gap-3">
-            <div className="absolute inset-0 bg-white/[0.02] blur-xl rounded-full opacity-0 group-focus-within:opacity-100 transition-opacity" />
-            <input
-              type="text"
-              className="relative flex-1 bg-[#080808]/80 backdrop-blur-xl border border-white/10 rounded-2xl px-8 py-6 text-xl outline-none focus:border-white/30 transition-luxury placeholder:text-white/10 font-light pr-20 shadow-2xl"
-              placeholder={cooldownSeconds > 0 ? `Cooldown active (${cooldownSeconds}s)...` : `Communicate with ${agentName}...`}
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              disabled={isTyping || cooldownSeconds > 0}
-            />
-            {/* Mic Button */}
-            <button
-              type="button"
-              onClick={toggleListening}
-              className={`relative w-14 rounded-2xl border flex items-center justify-center transition-luxury shadow-xl ${isListening ? 'bg-white/10 border-white/30' : 'bg-[#080808]/80 border-white/10 hover:border-white/20'}`}
-            >
-              {isListening ? <Mic size={20} className="text-white animate-pulse" /> : <MicOff size={20} className="text-white/30" />}
-            </button>
-            {/* Send Button */}
-            <button
-              type="submit"
-              disabled={isTyping || cooldownSeconds > 0 || !input.trim()}
-              className="relative w-14 rounded-2xl bg-white text-black flex items-center justify-center hover:scale-[1.08] active:scale-95 transition-luxury disabled:opacity-10 shadow-xl"
-            >
-              <Send size={20} />
-            </button>
-          </form>
-          <div className="mt-6 flex justify-between items-center px-4 opacity-10 text-[10px] font-bold uppercase tracking-[0.3em] font-mono pointer-events-none">
-            <div className="flex items-center gap-3">
-              <ShieldAlert size={12} />
-              ENCRYPTED_SESSION: {agentId.slice(0, 16)}
+      <div className="absolute bottom-0 w-full px-4 md:px-6 py-8 md:pb-12 bg-gradient-to-t from-[#050505] via-[#050505]/95 to-transparent z-50 pointer-events-none">
+        <div className="max-w-4xl mx-auto w-full relative pointer-events-auto">
+          <form onSubmit={handleSend} className="relative group flex items-center gap-3">
+            <div className="relative flex-1">
+              <div className="absolute inset-0 bg-white/[0.03] blur-2xl rounded-full opacity-0 group-focus-within:opacity-100 transition-opacity" />
+              <input 
+                type="text"
+                className="relative w-full bg-[#0a0a0a]/90 backdrop-blur-2xl border border-white/10 rounded-2xl px-6 py-6 md:px-8 text-[16px] md:text-xl outline-none focus:border-white/30 transition-luxury placeholder:text-white/20 font-light pr-32 shadow-[0_0_40px_rgba(0,0,0,0.5)]"
+                placeholder={`Communicate with ${agentName}...`}
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                disabled={isLoading}
+              />
+              
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={toggleListening}
+                  title="Voice Input"
+                  className={`w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center transition-luxury disabled:opacity-30 ${isListening ? 'bg-red-500/20 text-red-500 border border-red-500/30 animate-pulse' : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white'}`}
+                >
+                  <Mic size={20} />
+                </button>
+
+                <button 
+                  type="submit"
+                  disabled={isLoading || !input.trim()}
+                  className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-white text-black flex items-center justify-center hover:scale-[1.08] active:scale-95 transition-luxury disabled:opacity-10 shadow-xl disabled:hover:scale-100"
+                >
+                  <Send size={18} />
+                </button>
+              </div>
             </div>
-            <span>LATENT_LATENCY: 24MS</span>
+          </form>
+
+          <div className="mt-6 flex justify-between items-center px-4 opacity-10 md:opacity-20 text-[9px] md:text-[10px] font-bold uppercase tracking-[0.3em] font-mono pointer-events-none">
+             <div className="flex items-center gap-3">
+               <ShieldAlert size={12} />
+               <span className="hidden md:inline">ENCRYPTED_SESSION: {agentId.slice(0, 16)}</span>
+             </div>
+             <span>LATENT_LATENCY: 24MS</span>
           </div>
         </div>
       </div>
+      
+      {/* Deploy to Telegram Modal */}
+      {isDeployModalOpen && (
+        <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md p-8 border border-white/10 rounded-3xl bg-[#0a0a0a] shadow-2xl relative animate-fade-in text-left">
+            <button 
+              onClick={() => setIsDeployModalOpen(false)}
+              className="absolute top-6 right-6 text-white/40 hover:text-white transition-colors"
+            >
+              ✕
+            </button>
+            
+            {botStatus === 'live' ? (
+              <div className="text-center py-6 animate-fade-in">
+                <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-green-500/20 shadow-[0_0_40px_rgba(34,197,94,0.2)]">
+                  <span className="text-4xl">🚀</span>
+                </div>
+                <h3 className="text-2xl font-serif font-bold text-white mb-2">Deployed Successfully!</h3>
+                <p className="text-white/50 text-[14px] mb-8">
+                  Your AutoGen agent is now live and waiting for messages on Telegram.
+                </p>
+                {botUsername && (
+                  <a 
+                    href={`https://t.me/${botUsername}`} 
+                    target="_blank" 
+                    rel="noreferrer"
+                    className="inline-block w-full py-4 rounded-xl bg-[#2AABEE] text-white font-bold text-sm uppercase tracking-widest hover:bg-[#2AABEE]/90 hover:shadow-[0_0_20px_rgba(42,171,238,0.4)] transition-luxury mb-4"
+                  >
+                    Open in Telegram
+                  </a>
+                )}
+                <button 
+                  onClick={toggleTelegram}
+                  className="w-full py-4 rounded-xl bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20 font-bold text-sm uppercase tracking-widest transition-luxury"
+                >
+                  Stop Bot Instance
+                </button>
+              </div>
+            ) : (
+              <>
+                <h3 className="text-2xl font-serif font-bold mb-8 text-white tracking-tight">Deploy to Telegram</h3>
+                
+                <div className="space-y-6 mb-8">
+                  <div className="flex gap-4 items-start">
+                    <div className="w-8 h-8 rounded-full bg-cyan-500/10 text-cyan-400 flex items-center justify-center shrink-0 border border-cyan-500/30 font-bold text-sm mt-0.5">1</div>
+                    <div>
+                      <h4 className="text-white font-bold text-[15px] mb-1">Create a new Bot</h4>
+                      <p className="text-white/40 text-[13px] mb-3 leading-relaxed">Open BotFather on Telegram and send the <code className="bg-white/10 px-1.5 py-0.5 rounded text-white/70">/newbot</code> command.</p>
+                      <a href="https://t.me/BotFather?start=newbot" target="_blank" rel="noreferrer" className="inline-block px-4 py-2 rounded-lg bg-[#2AABEE]/10 border border-[#2AABEE]/30 text-[#2AABEE] font-bold text-[11px] uppercase tracking-wider hover:bg-[#2AABEE] hover:text-white transition-luxury">
+                        Open BotFather
+                      </a>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4 items-start">
+                    <div className="w-8 h-8 rounded-full bg-cyan-500/10 text-cyan-400 flex items-center justify-center shrink-0 border border-cyan-500/30 font-bold text-sm mt-0.5">2</div>
+                    <div>
+                      <h4 className="text-white font-bold text-[15px] mb-1">Copy your API Token</h4>
+                      <p className="text-white/40 text-[13px] leading-relaxed">Follow the prompts to name your bot. When given the HTTP API Token, copy it.</p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4 items-start">
+                    <div className="w-8 h-8 rounded-full bg-cyan-500/10 text-cyan-400 flex items-center justify-center shrink-0 border border-cyan-500/30 font-bold text-sm mt-0.5">3</div>
+                    <div className="w-full">
+                      <h4 className="text-white font-bold text-[15px] mb-2">Paste and Deploy</h4>
+                      <input 
+                        type="password" 
+                        placeholder="e.g. 1234567890:ABCdef..." 
+                        className="w-full p-4 bg-black/50 rounded-xl border border-white/10 text-white focus:border-cyan-500/50 outline-none font-mono text-sm shadow-inner transition-colors placeholder:text-white/20"
+                        value={token}
+                        onChange={(e) => setToken(e.target.value)}
+                        disabled={botStatus !== 'offline'}
+                      />
+                    </div>
+                  </div>
+                </div>
+                
+                <button 
+                  onClick={toggleTelegram}
+                  disabled={botStatus === 'starting' || (botStatus === 'offline' && !token)}
+                  className={`w-full p-4 rounded-xl font-bold text-sm uppercase tracking-widest transition-luxury ${
+                    botStatus === 'starting'
+                      ? 'bg-white/5 text-white/40 border border-white/10 cursor-not-allowed'
+                      : 'bg-cyan-500 text-black hover:bg-cyan-400 hover:shadow-[0_0_20px_rgba(34,211,238,0.4)] border border-cyan-400 shadow-xl'
+                  }`}
+                >
+                  {botStatus === 'starting' ? 'Deploying to Telegram...' : 'Launch Agent on Telegram'}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

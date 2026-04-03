@@ -4,14 +4,26 @@ import json
 import traceback
 from pathlib import Path
 import uvicorn
+import asyncio
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from telegram_manager import tg_manager
 
 # Automatically load the .env if present
 load_dotenv()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    agent_id = os.getenv("ACTIVE_TELEGRAM_AGENT_ID")
+    if token:
+        asyncio.create_task(tg_manager.start(token, agent_id))
+    yield
+    await tg_manager.stop()
 
 # We point to the local multi-agent-research-system-2 folder to import its actual crew logic
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -35,7 +47,7 @@ def _save_registry(data: list):
     REGISTRY_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
-app = FastAPI(title="AI Factory — AutoGen & CrewAI Agent Platform")
+app = FastAPI(title="AI Factory — AutoGen & CrewAI Agent Platform", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
@@ -435,6 +447,38 @@ def health():
         "provider": provider,
         "model": model_name,
         "agents_count": len(_load_registry()),
+    }
+
+
+
+# ---------------------------------------------------------------------------
+# 8) Telegram Bot endpoints
+# ---------------------------------------------------------------------------
+@app.post("/api/telegram/toggle")
+async def toggle_telegram_bot(request: Request):
+    data = await request.json()
+    token = data.get("token")
+    agent_id = data.get("agent_id")
+    action = data.get("action")  # "start" or "stop"
+    
+    try:
+        if action == "start":
+            if not token:
+                raise ValueError("Token is required to start the bot.")
+            await tg_manager.start(token, agent_id)
+            return {"status": "success", "message": "Bot started"}
+        else:
+            await tg_manager.stop()
+            return {"status": "success", "message": "Bot stopped"}
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/telegram/status")
+def telegram_status():
+    return {
+        "is_running": tg_manager.is_running,
+        "active_agent_id": tg_manager.app.bot_data.get("active_agent_id") if tg_manager.app else None
     }
 
 

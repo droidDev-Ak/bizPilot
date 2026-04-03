@@ -29,7 +29,7 @@ export default function WorkflowVisualizer({
   const [activeTab, setActiveTab] = useState<'visual' | 'code'>('visual');
 
   // Fallback if graph is empty (shouldn't happen with current backend)
-  const nodes = workflowGraph?.nodes || [];
+  const nodes = Array.isArray(workflowGraph?.nodes) ? workflowGraph.nodes : [];
 
   return (
     <div className="min-h-screen bg-[#050505] flex flex-col font-sans p-6 md:p-12 relative overflow-hidden animate-fade-in">
@@ -90,7 +90,8 @@ export default function WorkflowVisualizer({
 
                 <div className="flex justify-around items-center w-full max-w-5xl relative z-10">
                   {nodes.map((node, i) => {
-                    const IconComp = ICON_MAP[node.data.icon || 'bot'] || Bot;
+                    const nodeData = node.data || {};
+                    const IconComp = ICON_MAP[nodeData.icon || 'bot'] || Bot;
                     return (
                       <div key={node.id} className="flex flex-col items-center gap-8 group">
                         <div className="relative">
@@ -108,10 +109,10 @@ export default function WorkflowVisualizer({
                         </div>
                         <div className="text-center">
                           <h3 className="text-[11px] font-bold text-white tracking-[0.3em] uppercase mb-2 drop-shadow-md">
-                            {node.data.label}
+                            {nodeData.label || 'Node'}
                           </h3>
                           <p className="text-[10px] font-mono text-white/20 uppercase tracking-[0.2em]">
-                            {node.data.sublabel}
+                            {nodeData.sublabel || ''}
                           </p>
                         </div>
                       </div>
