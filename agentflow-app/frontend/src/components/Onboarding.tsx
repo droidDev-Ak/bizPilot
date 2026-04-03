@@ -61,6 +61,7 @@ export default function Onboarding({ onComplete, onSkip }: OnboardingProps) {
             <Zap size={40} className="text-white/50 animate-pulse" />
           </div>
           <h2 className="text-4xl font-serif text-white mb-8 tracking-tight">Building Intelligence</h2>
+          <p className="text-white/40 text-[13px] mb-8 max-w-xs mx-auto font-mono">This process may take 1-2 minutes while the agents gather and synthesize live data.</p>
           <div className="space-y-5">
             {STEPS.map((step, index) => (
               <div key={index} className="flex items-center gap-5 text-left">

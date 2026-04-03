@@ -295,7 +295,7 @@ export default function AgentChat({
                 </div>
                 <div className="flex flex-col space-y-2 items-start">
                   <div className="text-[10px] font-bold uppercase tracking-[0.2em] px-2 text-cyan-400/50 animate-pulse">
-                    Synthesizing
+                    Synthesizing <span className="normal-case tracking-normal text-white/30 ml-2">(This may take 1-2 minutes...)</span>
                   </div>
                   <div className="px-6 py-5 rounded-[1.5rem] rounded-tl-sm bg-[#111111]/80 border border-white/[0.08] backdrop-blur-md shadow-2xl">
                     <div className="flex gap-2 items-center h-full">

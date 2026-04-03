@@ -184,6 +184,9 @@ Our agents have identified 3 primary competitive angles:
 ---
 *Generated in Simulation Mode | System standing by for real-time inference keys.*
 """
+    import time
+    time.sleep(10)
+    
     return {
         "status": "success",
         "report": sim_report
